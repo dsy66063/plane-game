@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>飞机大战 - 霓虹版</title>
+    <style>
+        body {
+            background-color: #050505;
+            color: #fff;
+            font-family: 'Microsoft YaHei', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            background-color: #0a0a0a;
+            border: 2px solid #00aaff;
+            border-radius: 10px;
+            box-shadow: 0 0 25px rgba(0, 170, 255, 0.4);
+        }
+        #ui { font-size: 24px; margin-bottom: 15px; font-weight: bold; text-shadow: 0 0 10px #00aaff; }
+        .tip { color: #666; font-size: 14px; margin-top: 15px; }
+    </style>
+</head>
+<body>
+    <div id="ui">得分: <span id="score">0</span></div>
+    <canvas id="gameCanvas" width="480" height="600"></canvas>
+    <div class="tip">使用鼠标或手指在画布上滑动来移动飞机，飞机会自动开火！</div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+
+        // 游戏状态
+        let score = 0;
+        let isGameOver = false;
+        let frameCount = 0;
+
+        // 玩家飞机
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height - 80,
+            width: 40,
+            height: 40,
+            speed: 6,
+            color: '#00ffcc'
+        };
+
+        // 子弹、敌机、爆炸特效的数组
+        let bullets = [];
+        let enemies = [];
+        let particles = [];
+
+        // 鼠标/触摸控制
+        let mouseX = player.x;
+        let mouseY = player.y;
+        
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = e.clientX - rect.left;
+            mouseY = e.clientY - rect.top;
+        });
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            mouseX = e.touches[0].clientX - rect.left;
+            mouseY = e.touches[0].clientY - rect.top;
+        }, { passive: false });
+
+        // 游戏主循环
+        function gameLoop() {
+            if (isGameOver) return;
+            
+            update();
+            draw();
+            frameCount++;
+            requestAnimationFrame(gameLoop);
+        }
+
+        function update() {
+            // 平滑跟随鼠标
+            player.x += (mouseX - player.x) * 0.2;
+            player.y += (mouseY - player.y) * 0.2;
+            // 限制飞机不能出界
+            player.x = Math.max(0, Math.min(canvas.width, player.x));
+            player.y = Math.max(0, Math.min(canvas.height, player.y));
+
+            // 自动开火 (每10帧生成一颗子弹)
+            if (frameCount % 10 === 0) {
+                bullets.push({ x: player.x, y: player.y - 20, speed: 10, color: '#ffff00' });
+            }
+
+            // 生成敌机 (每40帧生成一个)
+            if (frameCount % 40 === 0) {
+                enemies.push({
+                    x: Math.random() * (canvas.width - 40) + 20,
+                    y: -30,
+                    width: 30,
+                    height: 30,
+                    speed: Math.random() * 2 + 2,
+                    color: '#ff3366'
+                });
+            }
+
+            // 更新子弹
+            bullets.forEach((b, index) => {
+                b.y -= b.speed;
+                if (b.y < 0) bullets.splice(index, 1);
+            });
+
+            // 更新敌机
+            enemies.forEach((e, eIndex) => {
+                e.y += e.speed;
+                
+                // 敌机出界
+                if (e.y > canvas.height) {
+                    enemies.splice(eIndex, 1);
+                }
+
+                // 检测碰撞：玩家 vs 敌机
+                if (Math.abs(player.x - e.x) < 30 && Math.abs(player.y - e.y) < 30) {
+                    gameOver();
+                }
+
+                // 检测碰撞：子弹 vs 敌机
+                bullets.forEach((b, bIndex) => {
+                    if (Math.abs(b.x - e.x) < 25 && Math.abs(b.y - e.y) < 25) {
+                        // 击毁敌机
+                        score += 100;
+                        scoreEl.innerText = score;
+                        createExplosion(e.x, e.y);
+                        enemies.splice(eIndex, 1);
+                        bullets.splice(bIndex, 1);
+                    }
+                });
+            });
+
+            // 更新爆炸粒子
+            particles.forEach((p, index) => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life -= 0.05;
+                if (p.life <= 0) particles.splice(index, 1);
+            });
+        }
+
+        function createExplosion(x, y) {
+            for (let i = 0; i < 15; i++) {
+                particles.push({
+                    x: x, y: y,
+                    vx: (Math.random() - 0.5) * 8,
+                    vy: (Math.random() - 0.5) * 8,
+                    life: 1,
+                    color: '#ffaa00'
+                });
+            }
+        }
+
+        function draw() {
+            // 清空画布，加拖影效果
+            ctx.fillStyle = 'rgba(10, 10, 10, 0.4)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 画子弹
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#ffff00';
+            bullets.forEach(b => {
+                ctx.fillStyle = b.color;
+                ctx.fillRect(b.x - 2, b.y - 10, 4, 15);
+            });
+
+            // 画敌机
+            ctx.shadowColor = '#ff3366';
+            enemies.forEach(e => {
+                ctx.fillStyle = e.color;
+                ctx.beginPath();
+                ctx.moveTo(e.x, e.y + 15);
+                ctx.lineTo(e.x - 15, e.y - 15);
+                ctx.lineTo(e.x + 15, e.y - 15);
+                ctx.fill();
+            });
+
+            // 画玩家飞机
+            ctx.shadowColor = '#00ffcc';
+            ctx.fillStyle = player.color;
+            ctx.beginPath();
+            ctx.moveTo(player.x, player.y - 20);
+            ctx.lineTo(player.x - 20, player.y + 20);
+            ctx.lineTo(player.x, player.y + 10);
+            ctx.lineTo(player.x + 20, player.y + 20);
+            ctx.fill();
+
+            // 画爆炸粒子
+            ctx.shadowBlur = 0;
+            particles.forEach(p => {
+                ctx.globalAlpha = p.life;
+                ctx.fillStyle = p.color;
+                ctx.fillRect(p.x, p.y, 4, 4);
+            });
+            ctx.globalAlpha = 1;
+        }
+
+        function gameOver() {
+            isGameOver = true;
+            alert('飞机坠毁！你的得分: ' + score);
+            // 重置游戏
+            score = 0;
+            scoreEl.innerText = 0;
+            bullets = [];
+            enemies = [];
+            particles = [];
+            player.x = canvas.width / 2;
+            player.y = canvas.height - 80;
+            mouseX = player.x;
+            mouseY = player.y;
+            isGameOver = false;
+            gameLoop();
+        }
+
+        // 启动游戏
+        gameLoop();
+    </script>
+</body>
+</html>
